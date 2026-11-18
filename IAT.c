@@ -37,6 +37,31 @@ int imports() {
     return 0;
 }
 
+int patch_iat() {
+    for (int i = 0; i < 4; i++) {
+        if (patches[i].iat_slot != NULL && patches[i].patched_address != NULL) 
+        {
+            DWORD oldProtect;
+            if (VirtualProtect(patches[i].iat_slot, sizeof(void*), PAGE_READWRITE, &oldProtect)) 
+            {
+                *(void**)patches[i].iat_slot = patches[i].patched_address;
+                if (!VirtualProtect(patches[i].iat_slot, sizeof(void*), oldProtect, &oldProtect)) 
+                {
+                printf("failed to restore memory protection for %s (Error: %lu)\n",
+                    patches[i].name, GetLastError());
+                return 2;
+                }
+            } 
+            else 
+            {
+                printf("failed to change memory protection for %s\n", patches[i].name);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 int main() {
     HMODULE hPEFile = GetModuleHandle(NULL); // NULL means the current process
     PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER) hPEFile;
@@ -92,7 +117,7 @@ int main() {
         printf("DOS Header: %p\n", pDosHeader);
         printf("NT Headers: %p\n", pNTHeaders);
         printf("DLL Count: %d\n", dllCount);
-        printf("Function Count: %d\n", functionCount);
+        printf("function count: %d\n", functionCount);
         MessageBoxA(NULL, "wuzuuhhhhhh", "oh hi mark", MB_OK);   // testing with a user32.dll import, oh hi mark reference
         return 0;
 }
