@@ -10,7 +10,7 @@ The implementation:
 
 - Accesses the executable's module base address and reads its DOS and NT headers.
 - Locates the PE Import Directory and traverses imported DLLs and functions.
-- Identifies `malloc`, `calloc`, `realloc`, and `free` in the IAT.
+- Identifies `malloc`, `calloc`, `realloc`, and `free` imported from a supported C runtime DLL.
 - Uses `VirtualProtect` to replace their IAT entries with custom wrapper functions.
 - Tracks allocated memory blocks and reports memory leaks and untracked memory operations.
 - Restores the original IAT entries when monitoring ends.
@@ -24,12 +24,17 @@ Allocation information is stored in a fixed-size array, including the memory add
 The implementation also handles several edge cases, including:
 
 - `realloc` with NULL or zero size.
-- Failed reallocations.
+- Failed reallocations and untracked pointers.
 - Repeated initialization and cleanup.
 - Invalid import directory entries and RVAs.
 - Restoring previously modified IAT entries if initialization fails.
+- IAT entries that are already writable when `VirtualProtect` fails.
 
-Import descriptors are traversed until the terminating zero descriptor is found, with RVA bounds checked against `SizeOfImage`.
+Import directory traversal is limited by the directory's `Size` field, while a terminating zero descriptor can end the traversal earlier if present. RVA bounds are also checked against `SizeOfImage`.
+
+Functions are matched using both their names and the DLL they are imported from. The program selects a supported C runtime DLL rather than replacing functions with matching names across unrelated libraries.
+
+During cleanup, the program traverses the import entries again to restore the original addresses, without using a separate array of patched IAT slots.
 
 ## Building and running
 
@@ -39,20 +44,28 @@ The project is written in C and uses the Windows API.
 - Windows
 - GCC (MinGW-w64)
 
-Compile using GCC
+Compile using GCC:
+
+```powershell
+gcc -Wall -Wextra -O0 iat.c -o iat.exe
+```
 
 Run the program:
 
-`.\iat.exe`
+```powershell
+.\iat.exe
+```
 
 The included `main()` demonstrates memory allocation tracking and intentionally leaves an allocation unfreed to test leak detection.
+
+Additional test scenarios can be enabled using compile-time flags such as `TEST_ALLOC_EDGES` and `TEST_REPEATED_CALLS`.
 
 ## Limitations
 
 - The hooks modify the main executable's IAT, not the IATs of every loaded DLL.
 - Allocation tracking uses a fixed-size array.
 - Memory operations performed outside an active monitoring session may not be tracked.
-- If matching imported functions have different original addresses, initialization fails instead of installing incompatible hooks.
+- If matching functions within the selected runtime resolve to different original addresses, initialization fails instead of installing incompatible hooks.
 
 ## Technical concepts
 
