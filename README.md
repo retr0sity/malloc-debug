@@ -1,21 +1,71 @@
 # malloc-debug
 
-An educational project exploring Windows executable internals, PE structures, and memory allocation debugging.
+An educational project exploring Windows executable internals, PE structures, IAT hooking, and memory allocation debugging.
 
 ## Overview
 
-This project focuses on inspecting the Portable Executable (PE) format of a running Windows process and understanding how imported functions are resolved through the Import Address Table (IAT).
+This project focuses on understanding the Portable Executable (PE) format and using the Import Address Table (IAT) to monitor memory allocation functions in a running Windows executable.
 
-The current implementation explores how to:
+The implementation:
 
-- Access the executable's module base address.
-- Read and inspect DOS and NT headers.
-- Locate the PE Import Directory.
-- Iterate through imported DLLs.
-- Traverse Import Lookup Table (ILT) and Import Address Table (IAT) entries.
-- Identify imported functions by name.
-- Inspect resolved function addresses stored in IAT entries.
-- Distinguish between function pointers, IAT slots, and possible import thunks.
+- Accesses the executable's module base address and reads its DOS and NT headers.
+- Locates the PE Import Directory and traverses imported DLLs and functions.
+- Identifies `malloc`, `calloc`, `realloc`, and `free` imported from a supported C runtime DLL.
+- Uses `VirtualProtect` to replace their IAT entries with custom wrapper functions.
+- Tracks allocated memory blocks and reports memory leaks and untracked memory operations.
+- Restores the original IAT entries when monitoring ends.
+
+## Implementation details
+
+The program uses `MallocDebug_Init()` to install the hooks and `MallocDebug_Done()` to restore the original function addresses and check for memory leaks.
+
+Allocation information is stored in a fixed-size array, including the memory address, allocation size, and tracking status.
+
+The implementation also handles several edge cases, including:
+
+- `realloc` with NULL or zero size.
+- Failed reallocations and untracked pointers.
+- Repeated initialization and cleanup.
+- Invalid import directory entries and RVAs.
+- Restoring previously modified IAT entries if initialization fails.
+- IAT entries that are already writable when `VirtualProtect` fails.
+
+Import directory traversal is limited by the directory's `Size` field, while a terminating zero descriptor can end the traversal earlier if present. RVA bounds are also checked against `SizeOfImage`.
+
+Functions are matched using both their names and the DLL they are imported from. The program selects a supported C runtime DLL rather than replacing functions with matching names across unrelated libraries.
+
+During cleanup, the program traverses the import entries again to restore the original addresses, without using a separate array of patched IAT slots.
+
+## Building and running
+
+The project is written in C and uses the Windows API.
+
+**Requirements:**
+- Windows
+- GCC (MinGW-w64)
+
+Compile using GCC:
+
+```powershell
+gcc -Wall -Wextra -O0 iat.c -o iat.exe
+```
+
+Run the program:
+
+```powershell
+.\iat.exe
+```
+
+The included `main()` demonstrates memory allocation tracking and intentionally leaves an allocation unfreed to test leak detection.
+
+Additional test scenarios can be enabled using compile-time flags such as `TEST_ALLOC_EDGES` and `TEST_REPEATED_CALLS`.
+
+## Limitations
+
+- The hooks modify the main executable's IAT, not the IATs of every loaded DLL.
+- Allocation tracking uses a fixed-size array.
+- Memory operations performed outside an active monitoring session may not be tracked.
+- If matching functions within the selected runtime resolve to different original addresses, initialization fails instead of installing incompatible hooks.
 
 ## Technical concepts
 
@@ -24,17 +74,18 @@ The current implementation explores how to:
 - Import Directory
 - Import Lookup Table (ILT)
 - Import Address Table (IAT)
+- IAT hooking
 - Relative Virtual Addresses (RVAs)
-- DLL imports
-- Function pointers and import thunks
-- Windows memory layout
+- Function pointers and DLL imports
+- Windows memory protection
+- Dynamic memory allocation
 
 ## Motivation
 
 This project started as part of my reverse engineering studies.
 
-The purpose is to gain practical experience with Windows executable internals by examining how applications interact with external libraries and how imported functions are represented and resolved at runtime.
+The purpose is to gain practical experience with Windows executable internals, understand how imported functions are resolved at runtime, and explore how IAT modification can be used to detect memory management issues.
 
 ## Disclaimer
 
-This is an educational project developed as part of my ongoing exploration of reverse engineering and low-level Windows programming.
+This is an educational project developed as part of my reverse engineering studies. It is intended for learning and experimentation rather than production use.
